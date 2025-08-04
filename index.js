@@ -1,3 +1,5 @@
+// index.js
+
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -8,7 +10,7 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // <-- IMPORTANT: Add this for form-urlencoded data
+app.use(express.urlencoded({ extended: true }));
 
 // Simple route to confirm the backend is running
 app.get('/', (req, res) => {
@@ -19,7 +21,7 @@ app.get('/', (req, res) => {
 app.post('/submit-report', async (req, res) => {
     try {
         console.log('📥 Received report:');
-        console.log('Request body:', req.body); // Log the received data
+        console.log('Request body:', req.body);
 
         // Extract data from the request body
         const {
@@ -41,7 +43,7 @@ app.post('/submit-report', async (req, res) => {
             return res.status(400).json({ error: "Missing required fields." });
         }
 
-        // Construct and execute the SQL query using a parameterized approach
+        // The corrected and more robust SQL query
         const query = `
             INSERT INTO reports (
                 user_id,
@@ -55,7 +57,8 @@ app.post('/submit-report', async (req, res) => {
                 attire_fare_violations,
                 image_description,
                 image_url
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *;
         `;
 
@@ -73,13 +76,19 @@ app.post('/submit-report', async (req, res) => {
             image_url,
         ];
 
+        // Log the query and values before executing for debugging
+        console.log('Executing query:', query);
+        console.log('With values:', values);
+
         const result = await pool.query(query, values);
         console.log('✅ Report saved to database. Row:', result.rows[0]);
         
         // Send a success response
         res.status(201).json({ message: "Report submitted successfully." });
     } catch (err) {
-        console.error('❌ DB Error:', err.message);
+        console.error('❌ Error executing query:', err.message);
+        console.error('Query:', query);
+        console.error('Values:', values);
         // Send a detailed error response
         res.status(500).json({ error: "Failed to submit report", details: err.message });
     }
