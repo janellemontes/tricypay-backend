@@ -3,7 +3,9 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const pool = require('./db'); // Import the database pool from db.js
+
+// Ensure the db.js file exists and exports a 'pool' object
+const pool = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,7 +25,14 @@ app.post('/submit-report', async (req, res) => {
         console.log('📥 Received report:');
         console.log('Request body:', req.body);
 
-        // Extract data from the request body
+        // Check if the request body is empty
+        if (Object.keys(req.body).length === 0) {
+            console.error('❌ Request body is empty.');
+            return res.status(400).json({ error: "Empty request body." });
+        }
+
+        // Extract and validate data from the request body,
+        // using the snake_case keys that the mobile app is now sending.
         const {
             user_id,
             driver_id,
@@ -38,9 +47,10 @@ app.post('/submit-report', async (req, res) => {
             image_url,
         } = req.body;
 
-        // Ensure required fields are present
+        // Ensure required fields are present and not empty
         if (!user_id || !driver_id || !plate_number) {
-            return res.status(400).json({ error: "Missing required fields." });
+            console.error('❌ Missing required fields: user_id, driver_id, or plate_number.');
+            return res.status(400).json({ error: "Missing required fields: user_id, driver_id, or plate_number." });
         }
 
         // The corrected and more robust SQL query
@@ -86,14 +96,35 @@ app.post('/submit-report', async (req, res) => {
         // Send a success response
         res.status(201).json({ message: "Report submitted successfully." });
     } catch (err) {
-        console.error('❌ Error executing query:', err.message);
-        console.error('Query:', query);
-        console.error('Values:', values);
+        console.error('❌ Error executing query or processing request:', err);
         // Send a detailed error response
-        res.status(500).json({ error: "Failed to submit report", details: err.message });
+        res.status(500).json({ error: "Failed to submit report", details: err.message, stack: err.stack });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+// A robust server start function
+const startServer = () => {
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    }).on('error', (err) => {
+        console.error('❌ Server startup error:', err);
+        // Attempt to restart or handle the error gracefully
+        process.exit(1);
+    });
+};
+
+// Check database connection before starting the server
+const checkDatabaseConnection = async () => {
+    try {
+        await pool.query('SELECT NOW()');
+        console.log('✅ Database connection successful.');
+        startServer();
+    } catch (err) {
+        console.error('❌ Database connection failed:', err);
+        console.log('Attempting to reconnect...');
+        // Retry connection after a delay
+        setTimeout(checkDatabaseConnection, 5000);
+    }
+};
+
+checkDatabaseConnection();
