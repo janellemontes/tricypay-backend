@@ -1,130 +1,117 @@
-// index.js
-
+// Import required modules
 const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
-
-// Ensure the db.js file exists and exports a 'pool' object
-const pool = require('./db');
+const { Pool } = require('pg');
+const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware to parse incoming JSON requests
+app.use(bodyParser.json());
 
-// Simple route to confirm the backend is running
+// Set up the PostgreSQL connection pool using the DATABASE_URL environment variable from Railway
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    // Required for secure connections to Railway's PostgreSQL database
+    rejectUnauthorized: false
+  }
+});
+
+// Test the database connection on startup
+pool.connect((err, client, release) => {
+  if (err) {
+    return console.error('Error acquiring client from pool', err.stack);
+  }
+  console.log('✅ Connected to PostgreSQL database!');
+  client.release();
+});
+
+// A simple root endpoint to confirm the server is running
 app.get('/', (req, res) => {
-    res.send('🚦 TRICYPAY backend is running!');
+  res.send('Tricypay Backend is running!');
 });
 
-// ✅ New API Endpoint to Submit Report
+// Endpoint to submit a new report
 app.post('/submit-report', async (req, res) => {
-    try {
-        console.log('📥 Received report:');
-        console.log('Request body:', req.body);
+  const {
+    userId,
+    driverId,
+    operatorName,
+    plateNumber,
+    parkingObstructionViolations,
+    trafficMovementViolations,
+    driverBehaviorViolations,
+    licensingDocumentationViolations,
+    attireFareViolations,
+    imageDescription,
+    imageUrl, // This can be null
+  } = req.body;
 
-        // Check if the request body is empty
-        if (Object.keys(req.body).length === 0) {
-            console.error('❌ Request body is empty.');
-            return res.status(400).json({ error: "Empty request body." });
-        }
+  // Log the received data for debugging
+  console.log('Received report data:', req.body);
 
-        // Extract and validate data from the request body,
-        // using the snake_case keys that the mobile app is now sending.
-        const {
-            user_id,
-            driver_id,
-            operator_name,
-            plate_number,
-            parking_obstruction_violations,
-            traffic_movement_violations,
-            driver_behavior_violations,
-            licensing_documentation_violations,
-            attire_fare_violations,
-            image_description,
-            image_url,
-        } = req.body;
+  // Validate that required fields are not empty
+  if (!driverId) {
+    return res.status(400).json({ error: 'Driver ID is required.' });
+  }
 
-        // Ensure required fields are present and not empty
-        if (!user_id || !driver_id || !plate_number) {
-            console.error('❌ Missing required fields: user_id, driver_id, or plate_number.');
-            return res.status(400).json({ error: "Missing required fields: user_id, driver_id, or plate_number." });
-        }
+  // Define the SQL INSERT query with placeholders for security
+  const insertQuery = `
+    INSERT INTO reports (
+      user_id,
+      driver_id,
+      operator_name,
+      plate_number,
+      parking_obstruction_violations,
+      traffic_movement_violations,
+      driver_behavior_violations,
+      licensing_documentation_violations,
+      attire_fare_violations,
+      image_description,
+      image_url
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING *;
+  `;
 
-        // The corrected and more robust SQL query
-        const query = `
-            INSERT INTO reports (
-                user_id,
-                driver_id,
-                operator_name,
-                plate_number,
-                parking_obstruction_violations,
-                traffic_movement_violations,
-                driver_behavior_violations,
-                licensing_documentation_violations,
-                attire_fare_violations,
-                image_description,
-                image_url
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *;
-        `;
+  // Define the values to be inserted, mapping them to the placeholders
+  const values = [
+    userId,
+    driverId,
+    operatorName,
+    plateNumber,
+    parkingObstructionViolations,
+    trafficMovementViolations,
+    driverBehaviorViolations,
+    licensingDocumentationViolations,
+    attireFareViolations,
+    imageDescription,
+    imageUrl
+  ];
 
-        const values = [
-            user_id,
-            driver_id,
-            operator_name,
-            plate_number,
-            parking_obstruction_violations,
-            traffic_movement_violations,
-            driver_behavior_violations,
-            licensing_documentation_violations,
-            attire_fare_violations,
-            image_description,
-            image_url,
-        ];
+  try {
+    // Execute the query using the connection pool
+    const result = await pool.query(insertQuery, values);
+    
+    // Log the successful insertion result
+    console.log('✅ Successfully inserted report:', result.rows[0]);
 
-        // Log the query and values before executing for debugging
-        console.log('Executing query:', query);
-        console.log('With values:', values);
-
-        const result = await pool.query(query, values);
-        console.log('✅ Report saved to database. Row:', result.rows[0]);
-        
-        // Send a success response
-        res.status(201).json({ message: "Report submitted successfully." });
-    } catch (err) {
-        console.error('❌ Error executing query or processing request:', err);
-        // Send a detailed error response
-        res.status(500).json({ error: "Failed to submit report", details: err.message, stack: err.stack });
-    }
+    // Send a success response
+    res.status(200).json({
+      message: 'Report submitted successfully!',
+      report: result.rows[0]
+    });
+  } catch (err) {
+    // Log the error and send an error response
+    console.error('❌ Error saving report to database:', err.stack);
+    res.status(500).json({
+      error: 'Failed to save report to database.',
+      details: err.message
+    });
+  }
 });
 
-// A robust server start function
-const startServer = () => {
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-    }).on('error', (err) => {
-        console.error('❌ Server startup error:', err);
-        // Attempt to restart or handle the error gracefully
-        process.exit(1);
-    });
-};
-
-// Check database connection before starting the server
-const checkDatabaseConnection = async () => {
-    try {
-        await pool.query('SELECT NOW()');
-        console.log('✅ Database connection successful.');
-        startServer();
-    } catch (err) {
-        console.error('❌ Database connection failed:', err);
-        console.log('Attempting to reconnect...');
-        // Retry connection after a delay
-        setTimeout(checkDatabaseConnection, 5000);
-    }
-};
-
-checkDatabaseConnection();
+// Start the server
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+});
