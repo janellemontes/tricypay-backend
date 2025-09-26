@@ -1,90 +1,67 @@
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
-const pool = require('./db'); // Import the database pool from db.js
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
+
+import driversRouter from "./routes/drivers.js";
+import operatorsRouter from "./routes/operators.js";
+import franchisesRouter from "./routes/franchises.js";
+import todasRouter from "./routes/todas.js";
+import vehiclesRouter from "./routes/vehicles.js";
+import assignmentsRouter from "./routes/assignments.js";
+import authRoutes from "./routes/auth.js";
+import authMiddleware from "./middleware/authMiddleware.js";
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// ✅ Allowed origins
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://eura-unslanderous-revertively.ngrok-free.dev", // your ngrok frontend
+];
+
+// Middleware
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS: " + origin));
+    },
+    credentials: true, // ✅ allow cookies and Authorization headers
+  })
+);
+
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // <-- IMPORTANT: Add this for form-urlencoded data
+app.use(cookieParser()); // ✅ parse cookies for JWT
 
-// Simple route to confirm the backend is running
-app.get('/', (req, res) => {
-    res.send('🚦 TRICYPAY backend is running!');
+// Routes
+app.use("/drivers", driversRouter);
+app.use("/operators", operatorsRouter);
+app.use("/franchises", franchisesRouter);
+app.use("/todas", todasRouter);
+app.use("/vehicles", vehiclesRouter);
+app.use("/assignments", assignmentsRouter);
+app.use("/auth", authRoutes);
+
+// ✅ Example protected route
+app.get("/protected", authMiddleware, (req, res) => {
+  res.json({ message: `Welcome, driver ${req.user.driver_id}` });
 });
 
-// ✅ New API Endpoint to Submit Report
-app.post('/submit-report', async (req, res) => {
-    try {
-        console.log('📥 Received report:');
-        console.log('Request body:', req.body); // Log the received data
-
-        // Extract data from the request body
-        const {
-            user_id,
-            driver_id,
-            operator_name,
-            plate_number,
-            parking_obstruction_violations,
-            traffic_movement_violations,
-            driver_behavior_violations,
-            licensing_documentation_violations,
-            attire_fare_violations,
-            image_description,
-            image_url,
-        } = req.body;
-
-        // Ensure required fields are present
-        if (!user_id || !driver_id || !plate_number) {
-            return res.status(400).json({ error: "Missing required fields." });
-        }
-
-        // Construct and execute the SQL query using a parameterized approach
-        const query = `
-            INSERT INTO reports (
-                user_id,
-                driver_id,
-                operator_name,
-                plate_number,
-                parking_obstruction_violations,
-                traffic_movement_violations,
-                driver_behavior_violations,
-                licensing_documentation_violations,
-                attire_fare_violations,
-                image_description,
-                image_url
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *;
-        `;
-
-        const values = [
-            user_id,
-            driver_id,
-            operator_name,
-            plate_number,
-            parking_obstruction_violations,
-            traffic_movement_violations,
-            driver_behavior_violations,
-            licensing_documentation_violations,
-            attire_fare_violations,
-            image_description,
-            image_url,
-        ];
-
-        const result = await pool.query(query, values);
-        console.log('✅ Report saved to database. Row:', result.rows[0]);
-        
-        // Send a success response
-        res.status(201).json({ message: "Report submitted successfully." });
-    } catch (err) {
-        console.error('❌ DB Error:', err.message);
-        // Send a detailed error response
-        res.status(500).json({ error: "Failed to submit report", details: err.message });
-    }
+// Health check
+app.get("/", (req, res) => {
+  res.send("Tricypay backend is running ✅");
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Start server
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+  console.log("✅ Allowed origins:", allowedOrigins);
 });
