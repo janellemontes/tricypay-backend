@@ -15,33 +15,36 @@ import authMiddleware from "./middleware/authMiddleware.js";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
-// ✅ Allowed origins
+// ✅ Allowed origins (local + ngrok + Render frontend)
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://eura-unslanderous-revertively.ngrok-free.dev", // your ngrok frontend
-];
+  "https://eura-unslanderous-revertively.ngrok-free.dev",
+  process.env.FRONTEND_URL, // set in Render dashboard
+].filter(Boolean); // remove undefined values
 
 // Middleware
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // allow curl / Postman / mobile apps
+
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+
+      console.warn("❌ Blocked by CORS:", origin);
       return callback(new Error("Not allowed by CORS: " + origin));
     },
-    credentials: true, // ✅ allow cookies and Authorization headers
+    credentials: true,
   })
 );
 
 app.use(express.json());
-app.use(cookieParser()); // ✅ parse cookies for JWT
+app.use(cookieParser());
 
-// Routes
+// ✅ API Routes
 app.use("/drivers", driversRouter);
 app.use("/operators", operatorsRouter);
 app.use("/franchises", franchisesRouter);
@@ -55,9 +58,9 @@ app.get("/protected", authMiddleware, (req, res) => {
   res.json({ message: `Welcome, driver ${req.user.driver_id}` });
 });
 
-// Health check
+// ✅ Health check (important for Render!)
 app.get("/", (req, res) => {
-  res.send("Tricypay backend is running ✅");
+  res.send("✅ Tricypay backend is running");
 });
 
 // Start server
